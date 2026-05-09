@@ -1,7 +1,7 @@
-from first_gym_environment import TwoGoalGridEnv
+from grid_enemy_ql.grid_enemy_env import GridEnemyEnv
 
 
-env = TwoGoalGridEnv(grid_size=5, max_steps=50)
+env = GridEnemyEnv(grid_size=5, max_steps=50)
 
 num_episodes = 5
 
@@ -33,4 +33,4 @@ for episode in range(num_episodes):
 
     print(f"Episode {ep} finished after {info['steps']} steps")
     print(f"Total reward: {total_reward}")
-    print(f"Goals reached: {info['goals_reached']}")
+    print(f"Goals reached: {info['goals_eliminated']}")
