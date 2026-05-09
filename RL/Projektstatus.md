@@ -1,15 +1,30 @@
 Kurze Übersicht Projektstatus bzgl. RL
 
+
 Aktuelle Unterteilung:
+
 Generell: Hauptunterschied: Umgebungen selbst Aktionsraum, Verhalten der Umgebung etc.
           Evaluate, Trainigs und Testklassen immer sehr ähnlich
+
+
 1. first_env_ql:
+
     Enthält den ersten Versuch q learning zu implementieren: Kleines Feld. Agent kann sich nur bewegen. 2 Gegner sind stationär
+
+
 2. grid_enemy ql:
+
     Agent kann jetzt laufen und schießen. Spiel vorbei wenn beide Ziele eliminiert.
+
+
 3. enemy_survival_ql:
+
     Gegner bewegen sich auf den Agenten zu, Der Agent kann entweder schießen oder sich bewegen. Reward Design nach Kills und Überlebenszeit ausgerichtet. Gegner Respawnen wenn sie getötet wurden. Spiel vorbei, entweder wenn Agent alle Steps überlebt hat oder gestorben ist (Stirbt bei Kollision mit Gegnern)
+
+
     Lernen 50000 Episoden (Tabellarisches Q-Learning):
+
+
         Episode 1000, Avg reward last 1000: -1.78, Avg kills: 0.39, Avg steps alive: 3.44, Death rate: 100.00%, Epsilon: 0.606, Q-table states: 2546
         Episode 2000, Avg reward last 1000: -1.62, Avg kills: 0.56, Avg steps alive: 3.75, Death rate: 100.00%, Epsilon: 0.368, Q-table states: 4316
         Episode 3000, Avg reward last 1000: -1.36, Avg kills: 0.84, Avg steps alive: 4.25, Death rate: 100.00%, Epsilon: 0.223, Q-table states: 5807
@@ -65,9 +80,11 @@ Generell: Hauptunterschied: Umgebungen selbst Aktionsraum, Verhalten der Umgebun
         Gelernte Zustände: 40961
 
     Weiteres Vorgehen: 
+
         Aktuelles Modell verbessern (Rewardstruktur, Gegnerverhalten)
 
 Folgeschritte:
+
     4. DQN implementieren
     5. Zustandsraum kontinuierlich machen
     6. Umgebung und Aktionsraum erweitern
