@@ -165,7 +165,7 @@ class Environment(gymnasium.Env):
 
         if len(self.episode_lengths) >= 20:
             avg = np.mean(self.episode_lengths[-20:])
-            if avg > self.curriculum_threshold and self.curriculum_threshold < 8:
+            if avg > self.curriculum_threshold and self.curriculum_level < 8:
                 self.curriculum_level += 1
                 print(f"Level Up! -> {self.curriculum_level} Monster (Durschn. {avg:.0f} steps)")
             self.episode_lengths = self.episode_lengths[-20:]
@@ -175,8 +175,7 @@ class Environment(gymnasium.Env):
         self.shoot_cooldown = 0
         self.bullets = []
         self.last_position = None
-        self.player = Player(self.width / 2, self.height / 2)
-
+        
         margin = 350
         self.player = Player(
             np.random.randint(margin, self.width - margin),
@@ -197,7 +196,7 @@ class Environment(gymnasium.Env):
         elif side == 2:
             x,y = 0, np.random.randint(0, self.height)
         else:
-            x,y = 0, np.random.randint(0, self.height)
+            x,y = 0, np.random.randint(0, self.width)
 
         roll = np.random.random()
         if roll < 0.25:
