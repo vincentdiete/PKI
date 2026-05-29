@@ -16,15 +16,21 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray, String
 import json
  
-MAX_MONSTERS = 8
+MAX_MONSTERS = 16
  
 XML = """
 <mujoco model="tower_defense">
   <option timestep="0.01"/>
   <worldbody>
     <light pos="5 5 10" dir="-1 -1 -2" diffuse="1 1 1"/>
+    <camera name="topdown" pos="5 5 15" euler="0 0 0"/>
     <geom name="ground" type="plane" pos="5 5 0" size="5 5 0.01" rgba="0.2 0.2 0.2 1"/>
- 
+    
+    <geom name="obstacle_0" type="box" pos="3.0 3.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_1" type="box" pos="8.0 3.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_2" type="box" pos="1.75 6.25 0.1" size="0.25 0.25 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_3" type="box" pos="7.5 7.5 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+
     <!-- Spieler (weiß) -->
     <body name="player" pos="5 5 0.1">
       <freejoint name="player_joint"/>
