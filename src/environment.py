@@ -30,15 +30,18 @@ class Environment(gymnasium.Env):
             obstacles=self.obstacles,
             obstacle_margin=0.15
         )
-
+        self.episode_waves = []
+        self.curriculum_threshold_waves = 2.0
         self.curriculum_level = 1
         self.episode_lengths = []
         self.curriculum_threshold = 1500
-        self.max_steps = 1000000
+        self.max_steps = 3000
         self.action_space = spaces.Box(
-            low = np.array([-np.pi, -np.pi, -1.0]),
-            high = np.array([np.pi, np.pi, 1.0]),
-            dtype = np.float32)
+            low=np.array([-1.0, -1.0, -1.0, -1.0], dtype=np.float32),
+            high=np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            dtype=np.float32
+            )
+
         self.bullets = []
         self.shoot_cooldown = 0
         self.wave = 0
@@ -51,7 +54,7 @@ class Environment(gymnasium.Env):
         cooldown_low = [0.0]
         obstacle_low = [-np.pi, 0.0] * 2
 
-        monster_high = [np.pi, 1500.0] * 4
+        monster_high = [np.pi, 15.0] * 4
         wall_high = [10.0] * 4
         cooldown_high = [30.0]
         obstacle_high = [np.pi, 20.0] * 2
@@ -151,15 +154,16 @@ class Environment(gymnasium.Env):
 
         super().reset(seed=seed)
        
-        if self.current_step > 0:
-            self.episode_lengths.append(self.current_step)
+        if len(self.episode_waves) >= 20:
+            recent_waves = self.episode_waves[-20:]
+            avg_waves = np.mean(recent_waves)
 
-        if len(self.episode_lengths) >= 20:
-            avg = np.mean(self.episode_lengths[-20:])
-            if avg > self.curriculum_threshold and self.curriculum_level < 4:
+            if avg_waves >= self.curriculum_threshold_waves and self.curriculum_level < 4:
                 self.curriculum_level += 1
+
+            self.episode_waves = self.episode_waves[-20:]
             self.episode_lengths = self.episode_lengths[-20:]
-       
+
         self.current_step = 0
         self.wave = 0
         self.shoot_cooldown = 0
@@ -209,26 +213,45 @@ class Environment(gymnasium.Env):
         self.current_step += 1
         reward = 0.0
 
-        move_theta, shoot_theta, shoot_trigger = action
+        move_x, move_y, shoot_x, shoot_y = action
 
-        dx = np.cos(move_theta)
-        dy = np.sin(move_theta)
+        # -------------------------
+        # Player-Bewegung
+        # -------------------------
+        move_vec = np.array([move_x, move_y], dtype=np.float32)
+        move_norm = np.linalg.norm(move_vec)
 
         prev_player_pos = self.player.position.copy()
 
-        self.player.move(dx, dy, self.width, self.height)
+        # Nur bewegen, wenn der Bewegungsvektor deutlich genug ist.
+        # Dadurch kann der Agent auch stehen bleiben.
+        if move_norm > 0.1:
+            move_dir = move_vec / move_norm
+            self.player.move(move_dir[0], move_dir[1], self.width, self.height)
 
+        # Kollision mit Hindernissen: Bewegung rückgängig machen
         for o in self.obstacles:
-            if o.contains_p(self.player.position[0], self.player.position[1], radius = 0.05):
+            if o.contains_p(self.player.position[0], self.player.position[1], radius=0.05):
                 self.player.position = prev_player_pos.copy()
+                break
 
-        if shoot_trigger > 0 and self.shoot_cooldown == 0:
+        # -------------------------
+        # Schießen
+        # -------------------------
+        shoot_vec = np.array([shoot_x, shoot_y], dtype=np.float32)
+        shoot_norm = np.linalg.norm(shoot_vec)
+
+        # Nur schießen, wenn Cooldown frei ist und der Schussvektor groß genug ist.
+        if self.shoot_cooldown == 0 and shoot_norm > 0.1:
+            shoot_dir = shoot_vec / shoot_norm
+
             self.bullets.append(Bullet(
                 self.player.position[0],
                 self.player.position[1],
-                np.cos(shoot_theta),
-                np.sin(shoot_theta)
+                shoot_dir[0],
+                shoot_dir[1]
             ))
+
             self.shoot_cooldown = 30
 
         if self.shoot_cooldown > 0:
@@ -242,12 +265,26 @@ class Environment(gymnasium.Env):
                         and not any(o.contains_p(b.position[0], b.position[1])
                         for o in self.obstacles)]
 
-        for b in self.bullets[:]:
+        remaining_bullets = []
+
+        for b in self.bullets:
+            bullet_hit = False
+
             for m in self.monsters:
-                if np.linalg.norm(b.position - m.position) < 0.1:
-                    m.hp = m.hp - b.damage
-                    self.bullets.remove(b)
+                if np.linalg.norm(b.position - m.position) < 0.18:
+                    m.hp -= b.damage
+                    reward += 1.0  # direkter Treffer-Reward
+
+                    if m.hp <= 0:
+                        reward += 4.0  # direkter Kill-Reward
+
+                    bullet_hit = True
                     break
+
+            if not bullet_hit:
+                remaining_bullets.append(b)
+
+        self.bullets = remaining_bullets
 
         self.monsters = [m for m in self.monsters if m.hp > 0]
 
@@ -256,7 +293,7 @@ class Environment(gymnasium.Env):
             monster_count = self.curriculum_level + (self.wave -1)
             for _ in range(monster_count):
               self.monsters.append(self.spawn_monster_on_edge())
-            reward += 15
+            reward += 8.0
 
         for m in self.monsters:
             m.update(
@@ -271,32 +308,38 @@ class Environment(gymnasium.Env):
             np.linalg.norm(m.position - self.player.position) < 0.27
             for m in self.monsters
         )
-        margin = min(self.player.position[0], self.width - self.player.position[0],
-                     self.player.position[1], self.height - self.player.position[1])
+       
+        margin = min(
+            self.player.position[0],
+            self.width - self.player.position[0],
+            self.player.position[1],
+            self.height - self.player.position[1]
+            )
+
         
-        if margin < 1:
-            reward-= (1.0 - (margin/2)) * 15.0
+        if margin < 0.5:
+            reward-= 0.2
 
         obstacle_margin = min(
             o.distance_obstacle_to_player(self.player.position[0], self.player.position[1])
             for o in self.obstacles
         )
 
-        if obstacle_margin < 1:
-            reward -= (1.0 - (obstacle_margin/2)) * 15.0
+        if obstacle_margin < 0.3:
+            reward -= 0.2
 
         distances = [self.player.position[0], self.width - self.player.position[0],
                      self.player.position[1], self.height - self.player.position[1]]
 
         distances_sorted = sorted(distances)
-        if distances_sorted[0] < 0.8 and distances_sorted[1] < 0.8:
-            reward -= 8.0
+        if distances_sorted[0] < 0.5 and distances_sorted[1] < 0.5:
+            reward -= 0.5
 
         if hit:
             reward -= 10
             terminated = True
         else:
-            reward += 0.2
+            reward += 0.02
             terminated = False
 
         truncated = self.current_step >= self.max_steps
