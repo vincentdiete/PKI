@@ -24,7 +24,7 @@ class Environment(gymnasium.Env):
         self.curriculum_threshold = 1500
         self.width = 10
         self.height = 10
-        self.max_steps = 1000000
+        self.max_steps = 2000
         self.action_space = spaces.Box(
             low = np.array([-np.pi, -np.pi, -1.0]),
             high = np.array([np.pi, np.pi, 1.0]),
@@ -42,7 +42,7 @@ class Environment(gymnasium.Env):
         obstacle_low = [-np.pi, 0.0] * 2
 
         monster_high = [np.pi, 1500.0] * 4
-        wall_high = [10.0] * 4 
+        wall_high = [10.0] * 4
         cooldown_high = [30.0]
         obstacle_high = [np.pi, 20.0] * 2
 
@@ -137,7 +137,7 @@ class Environment(gymnasium.Env):
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
-        
+       
         if self.current_step > 0:
             self.episode_lengths.append(self.current_step)
 
@@ -145,15 +145,14 @@ class Environment(gymnasium.Env):
             avg = np.mean(self.episode_lengths[-20:])
             if avg > self.curriculum_threshold and self.curriculum_level < 4:
                 self.curriculum_level += 1
-                print(f"Level Up! -> {self.curriculum_level} Monster (Durschn. {avg:.0f} steps)")
             self.episode_lengths = self.episode_lengths[-20:]
-        
+       
         self.current_step = 0
         self.wave = 0
         self.shoot_cooldown = 0
         self.bullets = []
         self.last_position = None
-        
+       
         margin = 3.5
         while True:
             px = np.random.uniform(margin, self.width - margin)
@@ -259,9 +258,8 @@ class Environment(gymnasium.Env):
 
         margin = min(self.player.position[0], self.width - self.player.position[0],
                      self.player.position[1], self.height - self.player.position[1])
-        
+       
         if margin < 2:
-            print(f"Margin: {margin:.1f} | Player position: {self.player.position}")
             reward-= (1.0 - (margin/2)) * 15.0
 
         distances = [self.player.position[0], self.width - self.player.position[0],
@@ -273,7 +271,6 @@ class Environment(gymnasium.Env):
 
         if hit:
             reward -= 10
-            print("Player hit!")
             terminated = True
         else:
             reward += 0.2
