@@ -8,7 +8,7 @@ import pygame
 import time
 
 env = Environment()
-model = stable_baselines3.SAC.load("shooter_ppo")
+model = stable_baselines3.SAC.load("shooter_SAC")
 
 obs, _ = env.reset()
 

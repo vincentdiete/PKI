@@ -6,11 +6,15 @@ import stable_baselines3
 from src.entities import Player, Monster, Bullet, Goblin, Golem, Obstacle
 import pygame
 import time
+from src.grid_map import GridMap
 
 # Umgebung
 class Environment(gymnasium.Env):
     def __init__(self):
         super(Environment, self).__init__()
+
+        self.width = 10
+        self.height = 10
 
         self.obstacles = [
             Obstacle(2.5, 2.5, 1.0, 1.0),
@@ -19,11 +23,17 @@ class Environment(gymnasium.Env):
             Obstacle(7.0, 7.0, 1.0, 1.0)
         ]
 
+        self.grid_map = GridMap(
+            width=self.width,
+            height=self.height,
+            cell_size=0.25,
+            obstacles=self.obstacles,
+            obstacle_margin=0.15
+        )
+
         self.curriculum_level = 1
         self.episode_lengths = []
         self.curriculum_threshold = 1500
-        self.width = 10
-        self.height = 10
         self.max_steps = 1000000
         self.action_space = spaces.Box(
             low = np.array([-np.pi, -np.pi, -1.0]),
@@ -63,17 +73,20 @@ class Environment(gymnasium.Env):
             np.array([o.x + o.width/2, o.y + o.height/2]) - self.player.position
         ))
 
+
         def obstacle_rel(i):
-            if i < len(sorted_obstacles):
-                cx = sorted_obstacles[i].x + sorted_obstacles[i].width / 2
-                cy = sorted_obstacles[i].y + sorted_obstacles[i].height / 2
-                dx = cx - self.player.position[0]
-                dy = cy - self.player.position[1]
-                dist = np.linalg.norm([dx, dy])
-                theta = np.arctan2(dy, dx)
-                return [theta, dist]
-            else:
-                return[0.0,0.0]
+                if i < len(sorted_obstacles):
+                    cx = sorted_obstacles[i].x + sorted_obstacles[i].width / 2
+                    cy = sorted_obstacles[i].y + sorted_obstacles[i].height / 2
+                    dx = cx - self.player.position[0]
+                    dy = cy - self.player.position[1]
+                    dist = sorted_obstacles[i].distance_obstacle_to_player(
+                    self.player.position[0], self.player.position[1]
+                    )
+                    theta = np.arctan2(dy, dx)
+                    return [theta, dist]
+                else:
+                    return[0.0,0.0]
 
         sorted_monsters = sorted(self.monsters,
                                key = lambda m: np.linalg.norm(m.position - self.player.position))
@@ -162,9 +175,10 @@ class Environment(gymnasium.Env):
                 break
         self.player = Player(px, py)
 
-        self.monsters = [self.spawn_monster_on_edge()
-                         for _ in range(self.curriculum_level)]
-
+        self.monsters = [
+            self.spawn_monster_on_edge()
+            for _ in range(self.curriculum_level)
+        ]
         return self._get_obs(), {}
 
     def spawn_monster_on_edge(self):
@@ -246,23 +260,31 @@ class Environment(gymnasium.Env):
             reward += 15
 
         for m in self.monsters:
-            prev_pos = m.position.copy()
-            m.move_toward(self.player)
-            if any (o.contains_p(m.position[0], m.position[1], radius = 0.05)
-            for o in self.obstacles):
-                m.position = prev_pos
+            m.update(
+                player=self.player,
+                obstacles=self.obstacles,
+                width=self.width,
+                height=self.height,
+                grid_map=self.grid_map
+            )
 
         hit = any(
             np.linalg.norm(m.position - self.player.position) < 0.27
             for m in self.monsters
         )
-
         margin = min(self.player.position[0], self.width - self.player.position[0],
                      self.player.position[1], self.height - self.player.position[1])
         
-        if margin < 2:
-            print(f"Margin: {margin:.1f} | Player position: {self.player.position}")
+        if margin < 1:
             reward-= (1.0 - (margin/2)) * 15.0
+
+        obstacle_margin = min(
+            o.distance_obstacle_to_player(self.player.position[0], self.player.position[1])
+            for o in self.obstacles
+        )
+
+        if obstacle_margin < 1:
+            reward -= (1.0 - (obstacle_margin/2)) * 15.0
 
         distances = [self.player.position[0], self.width - self.player.position[0],
                      self.player.position[1], self.height - self.player.position[1]]
@@ -281,4 +303,14 @@ class Environment(gymnasium.Env):
 
         truncated = self.current_step >= self.max_steps
 
-        return self._get_obs(), reward, terminated, truncated, {}
+        info = {
+            "monster_states": [m.state.name for m in self.monsters],
+            "monster_path_lengths": [len(m.path) for m in self.monsters],
+            "monster_waypoint_indices": [m.current_waypoint_index for m in self.monsters],
+            "monster_blocked_reasons": [
+                getattr(m, "blocked_reason", None)
+                for m in self.monsters
+            ],
+        }
+
+        return self._get_obs(), reward, terminated, truncated, info
