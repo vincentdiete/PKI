@@ -7,16 +7,13 @@ import pygame
 
 # Player
 class Player:
-    def __init__(self, x, y, speed = 0.75, hp = 100):
+    def __init__(self, x, y, speed = 0.01, hp = 100):
         self.position = np.array([x, y], dtype=np.float32)
         self.speed = speed
         self.hp = hp
 
     def move(self, dx, dy, width, height):
         direction = np.array([dx, dy], dtype=np.float32)
-        norm = np.linalg.norm(direction)
-        if norm > 0:
-            direction = direction / norm
         self.position += self.speed * direction
         self.position[0] = np.clip(self.position[0], 0, width)
         self.position[1] = np.clip(self.position[1], 0, height)
@@ -24,7 +21,7 @@ class Player:
 
 # Bullet
 class Bullet:
-    def __init__(self, x, y, dir_x, dir_y, speed = 2.5, damage = 50):
+    def __init__(self, x, y, dir_x, dir_y, speed = 0.3, damage = 50):
         self.position = np.array([x, y], dtype=np.float32)
         self.damage = damage
         self.speed = speed
@@ -43,7 +40,7 @@ class Bullet:
 
 # Monster
 class Monster:
-    def __init__(self, x, y, speed = 0.45, hp = 100):
+    def __init__(self, x, y, speed = 0.005, hp = 100):
         self.position = np.array([x, y], dtype=np.float32)
         self.speed = speed
         self.hp = hp
@@ -61,9 +58,23 @@ class Monster:
 class Goblin(Monster):
     # Schnelles, schwaches Monster (oneshot)
     def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.65, hp = 50)
+        super().__init__(x, y, speed = 0.0065, hp = 50)
 
 class Golem(Monster):
     # Langsames, starkes Monster (3 Treffer nötig bei dmg = 50)
     def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.25, hp = 150)
+        super().__init__(x, y, speed = 0.0035, hp = 150)
+
+
+# Obstacles einfügen
+class Obstacle():
+    def __init__(self, x, y, width, height):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+    def contains_p(self, px, py, radius = 0.0):
+        ''' Prüft ob Punkt Obstacle schneidet '''
+        return (self.x - radius <= px <= self.x + self.width + radius and
+                self.y - radius <= py <= self.y + self.height + radius)
