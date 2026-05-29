@@ -1,2 +1,0 @@
-# PKI
-Robotics project

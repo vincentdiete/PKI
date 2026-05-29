@@ -1,43 +1,62 @@
-import gymnasium
-from gymnasium import spaces
-import numpy as np
-import matplotlib.pyplot as plt
-import stable_baselines3
-import pygame
+from __future__ import annotations
+
 from enum import Enum, auto
+from typing import Iterable, Optional
+
+import numpy as np
+
 from src.pathfinding import astar
 
-# Player
+
 class Player:
-    def __init__(self, x, y, speed = 0.01, hp = 100):
+    def __init__(self, x: float, y: float, speed: float = 0.01, hp: int = 100):
         self.position = np.array([x, y], dtype=np.float32)
-        self.speed = speed
-        self.hp = hp
+        self.speed = float(speed)
+        self.hp = int(hp)
 
-    def move(self, dx, dy, width, height):
+    def move(self, dx: float, dy: float, width: float, height: float) -> None:
+        """Move by an already-normalized direction vector and clamp to the world."""
         direction = np.array([dx, dy], dtype=np.float32)
-        self.position += self.speed * direction
-        self.position[0] = np.clip(self.position[0], 0, width)
-        self.position[1] = np.clip(self.position[1], 0, height)
+        self.position = self.position + self.speed * direction
+        self.position[0] = np.clip(self.position[0], 0.0, width)
+        self.position[1] = np.clip(self.position[1], 0.0, height)
 
 
-# Bullet
 class Bullet:
-    def __init__(self, x, y, dir_x, dir_y, speed = 0.3, damage = 50):
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        dir_x: float,
+        dir_y: float,
+        speed: float = 0.3,
+        damage: int = 50,
+    ):
         self.position = np.array([x, y], dtype=np.float32)
-        self.damage = damage
-        self.speed = speed
+        self.damage = int(damage)
+        self.speed = float(speed)
 
         direction = np.array([dir_x, dir_y], dtype=np.float32)
-        norm = np.linalg.norm(direction)
-        self.direction = direction / norm if norm > 0 else np.array([1.0, 0.0])
+        norm = float(np.linalg.norm(direction))
+        self.direction = direction / norm if norm > 1e-8 else np.array([1.0, 0.0], dtype=np.float32)
 
-    def update(self):
+    def update(self) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Advance the bullet and return (old_position, new_position).
+        The returned segment is used for robust hit detection at high bullet speeds.
+        """
+        previous_position = self.position.copy()
         self.position = self.position + self.speed * self.direction
+        return previous_position, self.position.copy()
 
-    def out_of_bounds(self, width, height):
-        return (self.position[0] < 0 or self.position[0] > width or
-                self.position[1] < 0 or self.position[1] > height)
+    def out_of_bounds(self, width: float, height: float) -> bool:
+        return (
+            self.position[0] < 0.0
+            or self.position[0] > width
+            or self.position[1] < 0.0
+            or self.position[1] > height
+        )
+
 
 class MonsterState(Enum):
     DIRECT_CHASE = auto()
@@ -46,44 +65,43 @@ class MonsterState(Enum):
     BLOCKED = auto()
     REACHED = auto()
 
-# Monster
+
 class Monster:
-    def __init__(self, x, y, speed=0.005, hp=100):
+    def __init__(self, x: float, y: float, speed: float = 0.005, hp: int = 100):
         self.position = np.array([x, y], dtype=np.float32)
-        self.speed = speed
-        self.hp = hp
+        self.speed = float(speed)
+        self.hp = int(hp)
+        self.max_hp = int(hp)
 
         self.state = MonsterState.DIRECT_CHASE
-
-        # A*-Pfad als Weltkoordinaten-Wegpunkte
-        self.path = []
+        self.path: list[np.ndarray] = []
         self.current_waypoint_index = 0
+        self.last_goal_cell: Optional[tuple[int, int]] = None
+        self.steps_since_replan = 0
+        self.blocked_reason: Optional[str] = None
 
-        # Merkt sich, für welches Ziel zuletzt geplant wurde
-        self.last_goal_cell = None
-
-        self.blocked_reason = None
-
-    def update(self, player, obstacles, width, height, grid_map):
+    def update(self, player: Player, obstacles: Iterable["Obstacle"], width: float, height: float, grid_map) -> None:
         """
-        Zentrale Monsterlogik.
+        Monster behavior:
+        1. If player was reached, mark REACHED.
+        2. If line of sight is free, chase directly.
+        3. Otherwise use A* and follow waypoints.
 
-        Ablauf:
-        1. Prüfen, ob Spieler erreicht wurde.
-        2. Wenn direkte Sichtlinie frei ist: direkt verfolgen.
-        3. Wenn direkte Sichtlinie blockiert ist: A*-Pfad planen.
-        4. Wenn Pfad vorhanden ist: Pfad folgen.
+        Replanning is deliberately throttled. Replanning on every tiny player movement
+        creates unnecessary non-stationarity and CPU overhead without making the enemy smarter.
         """
+        self.steps_since_replan += 1
 
         if self._has_reached_player(player):
             self.state = MonsterState.REACHED
             return
 
-        # Fall 1: Direkter Weg ist frei
         if self._has_line_of_sight(player, obstacles):
             self.path = []
             self.current_waypoint_index = 0
             self.last_goal_cell = None
+            self.steps_since_replan = 0
+            self.blocked_reason = None
 
             old_position = self.position.copy()
             self._move_directly_towards(player.position, width, height)
@@ -91,88 +109,84 @@ class Monster:
             if self._collides_with_obstacle(obstacles, radius=0.05):
                 self.position = old_position
                 self.state = MonsterState.BLOCKED
+                self.blocked_reason = "direct_chase_collision"
             else:
                 self.state = MonsterState.DIRECT_CHASE
             return
 
-        # Fall 2: Direkter Weg ist blockiert -> A* benutzen
         monster_cell = grid_map.world_to_grid(self.position)
         player_cell = grid_map.world_to_grid(player.position)
 
         needs_new_path = (
             not self.path
             or self.current_waypoint_index >= len(self.path)
-            or self.last_goal_cell != player_cell
+            or (
+                self.last_goal_cell != player_cell
+                and self.steps_since_replan >= 20
+            )
         )
 
         if needs_new_path:
             self.state = MonsterState.PATHFINDING
             self._plan_path(monster_cell, player_cell, grid_map)
+            self.steps_since_replan = 0
 
         if self.path and self.current_waypoint_index < len(self.path):
             self.state = MonsterState.FOLLOW_PATH
             self._follow_path(obstacles, width, height)
         else:
             self.state = MonsterState.BLOCKED
+            if self.blocked_reason is None:
+                self.blocked_reason = "no_active_path"
 
-    def _has_reached_player(self, player, kill_radius=0.27):
-        return np.linalg.norm(self.position - player.position) < kill_radius
+    def _has_reached_player(self, player: Player, kill_radius: float = 0.27) -> bool:
+        return float(np.linalg.norm(self.position - player.position)) < kill_radius
 
-    def _move_directly_towards(self, target_position, width, height):
+    def _move_directly_towards(self, target_position: np.ndarray, width: float, height: float) -> None:
         direction = target_position - self.position
-        norm = np.linalg.norm(direction)
+        norm = float(np.linalg.norm(direction))
 
-        if norm > 0:
+        if norm > 1e-8:
             direction = direction / norm
+        else:
+            direction = np.zeros(2, dtype=np.float32)
 
         self.position = self.position + self.speed * direction
+        self.position[0] = np.clip(self.position[0], 0.0, width)
+        self.position[1] = np.clip(self.position[1], 0.0, height)
 
-        self.position[0] = np.clip(self.position[0], 0, width)
-        self.position[1] = np.clip(self.position[1], 0, height)
-
-    def _collides_with_obstacle(self, obstacles, radius=0.05):
+    def _collides_with_obstacle(self, obstacles: Iterable["Obstacle"], radius: float = 0.05) -> bool:
         return any(
-            obstacle.contains_p(
-                self.position[0],
-                self.position[1],
-                radius=radius
-            )
+            obstacle.contains_p(self.position[0], self.position[1], radius=radius)
             for obstacle in obstacles
         )
 
-    def _has_line_of_sight(self, player, obstacles, step_size=0.1, radius=0.05):
-        """
-        Prüft, ob die direkte Linie vom Monster zum Player frei ist.
-        Dafür wird die Linie in kleine Punkte aufgeteilt.
-        """
-
+    def _has_line_of_sight(
+        self,
+        player: Player,
+        obstacles: Iterable["Obstacle"],
+        step_size: float = 0.1,
+        radius: float = 0.05,
+    ) -> bool:
         start = self.position
         end = player.position
-
         direction = end - start
-        distance = np.linalg.norm(direction)
+        distance = float(np.linalg.norm(direction))
 
-        if distance == 0:
+        if distance <= 1e-8:
             return True
 
         direction = direction / distance
         steps = max(1, int(distance / step_size))
 
         for i in range(1, steps + 1):
-            point = start + direction * step_size * i
-
-            for obstacle in obstacles:
-                if obstacle.contains_p(point[0], point[1], radius=radius):
-                    return False
+            point = start + direction * min(step_size * i, distance)
+            if any(obstacle.contains_p(point[0], point[1], radius=radius) for obstacle in obstacles):
+                return False
 
         return True
 
-    def _plan_path(self, monster_cell, player_cell, grid_map):
-        """
-        Berechnet mit A* einen Pfad im Grid und wandelt ihn in Weltkoordinaten um.
-        Falls Start- oder Zielzelle blockiert sind, wird die nächste freie Zelle gesucht.
-        """
-
+    def _plan_path(self, monster_cell: tuple[int, int], player_cell: tuple[int, int], grid_map) -> None:
         start_cell = grid_map.find_nearest_free_cell(monster_cell)
         goal_cell = grid_map.find_nearest_free_cell(player_cell)
 
@@ -192,30 +206,21 @@ class Monster:
             self.blocked_reason = "astar_no_path"
             return
 
+        # Skip current cell; otherwise the monster may waste steps walking to its own cell center.
         if len(grid_path) > 1:
             grid_path = grid_path[1:]
 
-        self.path = [
-            grid_map.grid_to_world(cell)
-            for cell in grid_path
-        ]
-
+        self.path = [grid_map.grid_to_world(cell) for cell in grid_path]
         self.current_waypoint_index = 0
         self.last_goal_cell = player_cell
         self.blocked_reason = None
 
-    def _follow_path(self, obstacles, width, height, waypoint_threshold=0.08):
-        """
-        Monster läuft zum nächsten Wegpunkt des berechneten Pfads.
-        """
-
+    def _follow_path(self, obstacles: Iterable["Obstacle"], width: float, height: float, waypoint_threshold: float = 0.08) -> None:
         if self.current_waypoint_index >= len(self.path):
             return
 
         waypoint = self.path[self.current_waypoint_index]
-
         old_position = self.position.copy()
-
         self._move_directly_towards(waypoint, width, height)
 
         if self._collides_with_obstacle(obstacles, radius=0.05):
@@ -226,52 +231,38 @@ class Monster:
             self.blocked_reason = "collision_while_following_path"
             return
 
-        distance_to_waypoint = np.linalg.norm(self.position - waypoint)
-
-        if distance_to_waypoint < waypoint_threshold:
+        if float(np.linalg.norm(self.position - waypoint)) < waypoint_threshold:
             self.current_waypoint_index += 1
 
-    def move_toward(self, player):
-        """
-        Alte Methode bleibt erstmal erhalten.
-        Später kann man sie löschen.
-        """
-        direction = np.array([
-            player.position[0] - self.position[0],
-            player.position[1] - self.position[1]
-        ])
-
-        norm = np.linalg.norm(direction)
-
-        if norm > 0:
-            direction = direction / norm
-
-        self.position = self.position + self.speed * direction
 
 class Goblin(Monster):
-    # Schnelles, schwaches Monster (oneshot)
-    def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.0065, hp = 50)
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y, speed=0.0065, hp=50)
+
 
 class Golem(Monster):
-    # Langsames, starkes Monster (3 Treffer nötig bei dmg = 50)
-    def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.0035, hp = 150)
+    def __init__(self, x: float, y: float):
+        super().__init__(x, y, speed=0.0035, hp=150)
 
 
-# Obstacles einfügen
-class Obstacle():
-    def __init__(self, x, y, width, height):
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+class Obstacle:
+    def __init__(self, x: float, y: float, width: float, height: float):
+        self.x = float(x)
+        self.y = float(y)
+        self.width = float(width)
+        self.height = float(height)
 
-    def contains_p(self, px, py, radius = 0.0):
-        ''' Prüft ob Punkt Obstacle schneidet '''
-        return (self.x - radius <= px <= self.x + self.width + radius and
-                self.y - radius <= py <= self.y + self.height + radius)
-    def distance_obstacle_to_player(self, px, py):
-        dx = max(self.x - px, 0, px - (self.x + self.width))
-        dy = max(self.y - py, 0, py - (self.y + self.height))
-        return np.sqrt(dx**2 + dy**2)
+    def contains_p(self, px: float, py: float, radius: float = 0.0) -> bool:
+        return (
+            self.x - radius <= px <= self.x + self.width + radius
+            and self.y - radius <= py <= self.y + self.height + radius
+        )
+
+    def distance_to_point(self, px: float, py: float) -> float:
+        dx = max(self.x - px, 0.0, px - (self.x + self.width))
+        dy = max(self.y - py, 0.0, py - (self.y + self.height))
+        return float(np.sqrt(dx**2 + dy**2))
+
+    def distance_obstacle_to_player(self, px: float, py: float) -> float:
+        # Backwards-compatible name used by older code.
+        return self.distance_to_point(px, py)
