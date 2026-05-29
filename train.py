@@ -11,5 +11,5 @@ import time
 # Training
 env = Environment()
 model = stable_baselines3.SAC("MlpPolicy", env, verbose=1, tensorboard_log="./logs")
-model.learn(total_timesteps=5000)
-model.save("shooter_ppo_test")
+model.learn(total_timesteps=1000000)
+model.save("shooter_SAC")
