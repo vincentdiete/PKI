@@ -48,7 +48,7 @@ class MonsterState(Enum):
 
 # Monster
 class Monster:
-    def __init__(self, x, y, speed=0.005, hp=100):
+    def __init__(self, x, y, speed=0.005, hp=50):
         self.position = np.array([x, y], dtype=np.float32)
         self.speed = speed
         self.hp = hp
@@ -88,7 +88,7 @@ class Monster:
             old_position = self.position.copy()
             self._move_directly_towards(player.position, width, height)
 
-            if self._collides_with_obstacle(obstacles, radius=0.05):
+            if self._collides_with_obstacle(obstacles, radius=0.15):
                 self.position = old_position
                 self.state = MonsterState.BLOCKED
             else:
@@ -140,7 +140,7 @@ class Monster:
             for obstacle in obstacles
         )
 
-    def _has_line_of_sight(self, player, obstacles, step_size=0.1, radius=0.05):
+    def _has_line_of_sight(self, player, obstacles, step_size=0.1, radius=0.15):
         """
         Prüft, ob die direkte Linie vom Monster zum Player frei ist.
         Dafür wird die Linie in kleine Punkte aufgeteilt.
@@ -218,7 +218,7 @@ class Monster:
 
         self._move_directly_towards(waypoint, width, height)
 
-        if self._collides_with_obstacle(obstacles, radius=0.05):
+        if self._collides_with_obstacle(obstacles, radius=0.15):
             self.position = old_position
             self.path = []
             self.current_waypoint_index = 0
