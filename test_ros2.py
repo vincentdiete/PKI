@@ -1,11 +1,13 @@
 import time
 import stable_baselines3
 from src.ros2 import TowerDefensePublisher
+import os
 
 publisher = TowerDefensePublisher()
 obs, info = publisher.reset()
+model_path = os.path.join(os.path.dirname(__file__), "models", "best", "best_model.zip")
 
-model = stable_baselines3.SAC.load("shooter_SAC")
+model = stable_baselines3.SAC.load(model_path)
 
 
 for step in range(10000000):
