@@ -22,17 +22,17 @@ XML = """
 <mujoco model="tower_defense">
   <option timestep="0.01"/>
   <worldbody>
-    <light pos="5 5 10" dir="-1 -1 -2" diffuse="1 1 1"/>
-    <camera name="topdown" pos="5 5 15" euler="0 0 0"/>
-    <geom name="ground" type="plane" pos="5 5 0" size="5 5 0.01" rgba="0.2 0.2 0.2 1"/>
+    <light pos="3 3 10" dir="-1 -1 -2" diffuse="1 1 1"/>
+    <camera name="topdown" pos="3 3 15" euler="0 0 0"/>
+    <geom name="ground" type="plane" pos="3 3 0" size="3 3 0.01" rgba="0.2 0.2 0.2 1"/>
     
-    <geom name="obstacle_0" type="box" pos="3.0 3.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
-    <geom name="obstacle_1" type="box" pos="8.0 3.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
-    <geom name="obstacle_2" type="box" pos="1.75 6.25 0.1" size="0.25 0.25 0.1" rgba="0.5 0.5 0.5 1"/>
-    <geom name="obstacle_3" type="box" pos="7.5 7.5 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_0" type="box" pos="2.0 2.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_1" type="box" pos="5.0 2.0 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_2" type="box" pos="1.25 4.25 0.1" size="0.25 0.25 0.1" rgba="0.5 0.5 0.5 1"/>
+    <geom name="obstacle_3" type="box" pos="4.5 4.5 0.1" size="0.5 0.5 0.1" rgba="0.5 0.5 0.5 1"/>
 
     <!-- Spieler (weiß) -->
-    <body name="player" pos="5 5 0.1">
+    <body name="player" pos="3 3 0.1">
       <freejoint name="player_joint"/>
       <geom type="cylinder" size="0.15 0.05" rgba="1 1 1 1"/>
     </body>
@@ -40,53 +40,53 @@ XML = """
     <!-- Monster (rot) -->
     <body name="monster_0" pos="0 0 -1">
       <freejoint name="monster_joint_0"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_1" pos="0 0 -1">
       <freejoint name="monster_joint_1"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_2" pos="0 0 -1">
       <freejoint name="monster_joint_2"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_3" pos="0 0 -1">
       <freejoint name="monster_joint_3"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_4" pos="0 0 -1">
       <freejoint name="monster_joint_4"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_5" pos="0 0 -1">
       <freejoint name="monster_joint_5"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_6" pos="0 0 -1">
       <freejoint name="monster_joint_6"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
     <body name="monster_7" pos="0 0 -1">
       <freejoint name="monster_joint_7"/>
-      <geom type="cylinder" size="0.12 0.05" rgba="1 0 0 1"/>
+      <geom type="cylinder" size="0.25 0.05" rgba="1 0 0 1"/>
     </body>
  
     <!-- Bullets (gelb) -->
     <body name="bullet_0" pos="0 0 -1">
       <freejoint name="bullet_joint_0"/>
-      <geom type="sphere" size="0.05" rgba="1 1 0 1"/>
+      <geom type="sphere" size="0.12" rgba="1 1 0 1"/>
     </body>
     <body name="bullet_1" pos="0 0 -1">
       <freejoint name="bullet_joint_1"/>
-      <geom type="sphere" size="0.05" rgba="1 1 0 1"/>
+      <geom type="sphere" size="0.12" rgba="1 1 0 1"/>
     </body>
     <body name="bullet_2" pos="0 0 -1">
       <freejoint name="bullet_joint_2"/>
-      <geom type="sphere" size="0.05" rgba="1 1 0 1"/>
+      <geom type="sphere" size="0.12" rgba="1 1 0 1"/>
     </body>
     <body name="bullet_3" pos="0 0 -1">
       <freejoint name="bullet_joint_3"/>
-      <geom type="sphere" size="0.05" rgba="1 1 0 1"/>
+      <geom type="sphere" size="0.12" rgba="1 1 0 1"/>
     </body>
   </worldbody>
 </mujoco>
@@ -100,7 +100,7 @@ class TowerDefenseVisualizer(Node):
         self.model = model
         self.data = data
  
-        self.player_pos = np.array([5.0, 5.0])
+        self.player_pos = np.array([3.0, 3.0])
         self.monster_positions = []
         self.bullet_positions = []
  
