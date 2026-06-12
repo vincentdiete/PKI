@@ -2,7 +2,7 @@ import gymnasium
 from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
-from src.entities import Player, Monster, Goblin, Golem, Obstacle
+from src.entities import Player, Monster, Obstacle
 from src.grid_map import GridMap
 
 

@@ -1,10 +1,10 @@
 import numpy as np
 from stable_baselines3 import SAC
 from src.combat_env import CombatEnv
+import os
 
-
-MOVEMENT_MODEL_PATH = "movement_autoaim_SAC_500k.zip"
-SHOOTING_MODEL_PATH = "models/shooting_SAC_200k.zip"
+MOVEMENT_MODEL_PATH = os.path.join("models", "movement_autoaim_SAC_500k.zip")
+SHOOTING_MODEL_PATH = os.path.join("models", "shooting_SAC_200k.zip")
 
 EPISODES = 20
 DETERMINISTIC = True
