@@ -2,13 +2,10 @@ import gymnasium
 from gymnasium import spaces
 import numpy as np
 import matplotlib.pyplot as plt
-import stable_baselines3
-from src.entities import Player, Monster, Bullet, Goblin, Golem, Obstacle
-import pygame
-import time
+from src.entities import Player, Monster, Goblin, Golem, Obstacle
 from src.grid_map import GridMap
 
-# Umgebung
+
 class Environment(gymnasium.Env):
     def __init__(self):
         super(Environment, self).__init__()
@@ -30,14 +27,15 @@ class Environment(gymnasium.Env):
             obstacles=self.obstacles,
             obstacle_margin=0.15
         )
-        self.episode_waves = []
-        self.curriculum_threshold_waves = 2.0
-        self.curriculum_level = 1
-        self.episode_lengths = []
-        self.curriculum_threshold = 1500
-        self.max_steps = 3000
-        self.alive_reward = 0.005
 
+        # Movement-only Curriculum: Schwierigkeit steigt über mehr Gegner beim Reset.
+        self.curriculum_level = 1
+        self.max_curriculum_level = 3
+        self.episode_lengths = []
+        self.max_steps = 3000
+
+        # Movement-only Reward-Skala
+        self.alive_reward = 0.001
         self.visible_target_reward = 0.02
         self.no_visible_target_penalty = -0.005
 
@@ -49,18 +47,16 @@ class Environment(gymnasium.Env):
         self.obstacle_near_penalty = -0.03
         self.corner_penalty = -0.08
         self.obstacle_collision_penalty = -0.10
-
-        self.kill_reward = 4.0
-        self.wave_clear_reward = 5.0
-
         self.death_penalty = -12.0
 
+        # Phase 1: Agent steuert nur Bewegung.
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0], dtype=np.float32),
             high=np.array([1.0, 1.0], dtype=np.float32),
             dtype=np.float32
         )
 
+        # Bleibt für ROS2/Visualisierung vorhanden, wird in Movement-only aber nicht benutzt.
         self.bullets = []
         self.last_shoot_dir = np.array([0.0, 0.0], dtype=np.float32)
         self.shoot_cooldown = 0
@@ -70,7 +66,7 @@ class Environment(gymnasium.Env):
         self._fig = None
         self._ax = None
 
-        # Observation Space aufbauen
+        # Observation Space bleibt erstmal kompatibel zur bisherigen Struktur.
         monster_low = [-np.pi, 0.0] * 4
         wall_low = [0.0] * 4
         cooldown_low = [0.0]
@@ -81,93 +77,93 @@ class Environment(gymnasium.Env):
         cooldown_high = [10.0]
         obstacle_high = [np.pi, 20.0] * 2
 
-        self.observation_space = spaces.Box(low= np.array(monster_low + wall_low + cooldown_low + obstacle_low),
-                                            high= np.array(monster_high + wall_high + cooldown_high + obstacle_high),
-                                            shape=(17,),
-                                            dtype=np.float32
-                                            )
+        self.observation_space = spaces.Box(
+            low=np.array(monster_low + wall_low + cooldown_low + obstacle_low),
+            high=np.array(monster_high + wall_high + cooldown_high + obstacle_high),
+            shape=(17,),
+            dtype=np.float32
+        )
 
         self.player = None
         self.monsters = []
         self.current_step = 0
 
     def _get_obs(self):
-
-        sorted_obstacles = sorted(enumerate(self.obstacles),
-            key = lambda io: (np.linalg.norm(
-                np.array([io[1].x + io[1].width/2, io[1].y + io[1].height/2]) - self.player.position
-            ), io[0]))
+        sorted_obstacles = sorted(
+            enumerate(self.obstacles),
+            key=lambda io: (
+                np.linalg.norm(
+                    np.array([io[1].x + io[1].width / 2, io[1].y + io[1].height / 2])
+                    - self.player.position
+                ),
+                io[0]
+            )
+        )
         sorted_obstacles = [o for _, o in sorted_obstacles]
 
-
         def obstacle_rel(i):
-                if i < len(sorted_obstacles):
-                    cx = sorted_obstacles[i].x + sorted_obstacles[i].width / 2
-                    cy = sorted_obstacles[i].y + sorted_obstacles[i].height / 2
-                    dx = cx - self.player.position[0]
-                    dy = cy - self.player.position[1]
-                    dist = sorted_obstacles[i].distance_obstacle_to_player(
-                    self.player.position[0], self.player.position[1]
-                    )
-                    theta = np.arctan2(dy, dx)
-                    return [theta, dist]
-                else:
-                    return[0.0,0.0]
-
-        sorted_monsters = sorted(enumerate(self.monsters),
-            key = lambda im: (np.linalg.norm(im[1].position - self.player.position), im[0]))
-        sorted_monsters = [m for _, m in sorted_monsters]
-        
-        def monster_rel(i):
-            if i < len(self.monsters):
-                dx = sorted_monsters[i].position[0] - self.player.position[0]
-                dy = sorted_monsters[i].position[1] - self.player.position[1]
-                dist = np.linalg.norm([dx,dy])
+            if i < len(sorted_obstacles):
+                cx = sorted_obstacles[i].x + sorted_obstacles[i].width / 2
+                cy = sorted_obstacles[i].y + sorted_obstacles[i].height / 2
+                dx = cx - self.player.position[0]
+                dy = cy - self.player.position[1]
+                dist = sorted_obstacles[i].distance_obstacle_to_player(
+                    self.player.position[0],
+                    self.player.position[1]
+                )
                 theta = np.arctan2(dy, dx)
                 return [theta, dist]
-            else:
-                return [0.0, 0.0]
+            return [0.0, 0.0]
+
+        sorted_monsters = sorted(
+            enumerate(self.monsters),
+            key=lambda im: (np.linalg.norm(im[1].position - self.player.position), im[0])
+        )
+        sorted_monsters = [m for _, m in sorted_monsters]
+
+        def monster_rel(i):
+            if i < len(sorted_monsters):
+                dx = sorted_monsters[i].position[0] - self.player.position[0]
+                dy = sorted_monsters[i].position[1] - self.player.position[1]
+                dist = np.linalg.norm([dx, dy])
+                theta = np.arctan2(dy, dx)
+                return [theta, dist]
+            return [0.0, 0.0]
 
         dist_left = float(self.player.position[0])
         dist_right = float(self.width - self.player.position[0])
         dist_down = float(self.player.position[1])
         dist_up = float(self.height - self.player.position[1])
 
-        return np.array(monster_rel(0) + monster_rel(1) + monster_rel(2) + monster_rel(3)
+        return np.array(
+            monster_rel(0) + monster_rel(1) + monster_rel(2) + monster_rel(3)
             + [dist_left, dist_right, dist_down, dist_up]
             + [float(self.shoot_cooldown)]
             + obstacle_rel(0) + obstacle_rel(1),
-            dtype=np.float32)
+            dtype=np.float32
+        )
 
     def get_frame(self):
-      frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
-      # Player — weißer Kreis
-      px, py = self.player.position.astype(int)
-      for dx in range(-6, 6):
-          for dy in range(-6, 6):
-              if dx**2 + dy**2 < 36:
-                  x, y = px+dx, py+dy
-                  if 0 <= x < self.width and 0 <= y < self.height:
-                      frame[y, x] = [255, 255, 255]
+        px, py = self.player.position.astype(int)
+        for dx in range(-6, 6):
+            for dy in range(-6, 6):
+                if dx ** 2 + dy ** 2 < 36:
+                    x, y = px + dx, py + dy
+                    if 0 <= x < self.width and 0 <= y < self.height:
+                        frame[y, x] = [255, 255, 255]
 
-      # Monster — rote Kreise
-      for m in self.monsters:
-          mx, my = m.position.astype(int)
-          for dx in range(-8, 8):
-              for dy in range(-8, 8):
-                  if dx**2 + dy**2 < 64:
-                      x, y = mx+dx, my+dy
-                      if 0 <= x < self.width and 0 <= y < self.height:
-                          frame[y, x] = [255, 0, 0]
+        for m in self.monsters:
+            mx, my = m.position.astype(int)
+            for dx in range(-8, 8):
+                for dy in range(-8, 8):
+                    if dx ** 2 + dy ** 2 < 64:
+                        x, y = mx + dx, my + dy
+                        if 0 <= x < self.width and 0 <= y < self.height:
+                            frame[y, x] = [255, 0, 0]
 
-      # Bullets — gelbe Punkte
-      for b in self.bullets:
-          bx, by = b.position.astype(int)
-          if 0 <= bx < self.width and 0 <= by < self.height:
-              frame[by, bx] = [255, 255, 0]
-
-      return frame
+        return frame
 
     def close(self):
         if self._fig is not None:
@@ -175,27 +171,20 @@ class Environment(gymnasium.Env):
             self._fig = None
             self._ax = None
 
-
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        if len(self.episode_waves) >= 20:
-            recent_waves = self.episode_waves[-20:]
+        # Movement-only Curriculum:
+        # Kein Schießen, keine Kills, keine Waves.
+        # Schwierigkeit steigt nur, wenn der Agent lange genug überlebt.
+        if len(self.episode_lengths) >= 20:
             recent_lengths = self.episode_lengths[-20:]
-
-            avg_waves = np.mean(recent_waves)
             avg_length = np.mean(recent_lengths)
 
-            if (
-                avg_waves >= self.curriculum_threshold_waves
-                and avg_length >= 0.6 * self.max_steps
-                and self.curriculum_level < 3
-            ):
+            if avg_length >= 0.8 * self.max_steps and self.curriculum_level < self.max_curriculum_level:
                 self.curriculum_level += 1
-                self.episode_waves = []
                 self.episode_lengths = []
             else:
-                self.episode_waves = self.episode_waves[-20:]
                 self.episode_lengths = self.episode_lengths[-20:]
 
         self.current_step = 0
@@ -224,32 +213,22 @@ class Environment(gymnasium.Env):
     def spawn_monster_on_edge(self):
         side = np.random.randint(0, 4)
         if side == 0:
-            x,y = np.random.uniform(0, self.width), 0
+            x, y = np.random.uniform(0, self.width), 0
         elif side == 1:
-            x,y = np.random.uniform(0, self.width), self.height
+            x, y = np.random.uniform(0, self.width), self.height
         elif side == 2:
-            x,y = 0, np.random.uniform(0, self.height)
+            x, y = 0, np.random.uniform(0, self.height)
         else:
-            x,y = self.width, np.random.uniform(0, self.height)
+            x, y = self.width, np.random.uniform(0, self.height)
 
-        return Monster(x,y)
+        return Monster(x, y)
 
-        '''
-        -> Für Implementierung verschiedener Monster:
-        roll = np.random.random()
-        if roll < 0.25:
-            return Goblin(x,y)
-        elif roll > 0.5:
-            return Monster(x,y)
-        else:
-            return Golem(x, y)
-        '''
     def has_clear_shot(self, target_position, step_size=0.05, radius=0.03):
         """
         Prüft, ob zwischen Player und Ziel ein Hindernis liegt.
-        Gibt True zurück, wenn der Schussweg frei ist.
+        Wird in Movement-only als Positionssignal benutzt:
+        freie Schusslinie = gute Position.
         """
-
         start = self.player.position
         end = target_position
 
@@ -271,13 +250,11 @@ class Environment(gymnasium.Env):
 
         return True
 
-
     def get_nearest_visible_monster(self):
         """
-        Sucht den nächsten Gegner, der vom Player aus direkt beschießbar ist.
-        Gegner hinter Hindernissen werden ignoriert.
+        Sucht den nächsten Gegner, der vom Player aus direkt beschießbar wäre.
+        In Movement-only wird nicht geschossen; diese Funktion liefert nur Reward-Signal.
         """
-
         if len(self.monsters) == 0:
             return None
 
@@ -294,39 +271,6 @@ class Environment(gymnasium.Env):
             key=lambda m: np.linalg.norm(m.position - self.player.position)
         )
 
-
-    def auto_shoot_nearest_visible(self):
-        """
-        Schießt automatisch auf den nächsten sichtbaren Gegner.
-        Der Agent entscheidet nicht über die Schussrichtung.
-        """
-
-        if self.shoot_cooldown > 0:
-            return
-
-        target = self.get_nearest_visible_monster()
-
-        if target is None:
-            return
-
-        direction = target.position - self.player.position
-        norm = np.linalg.norm(direction)
-
-        if norm < 1e-8:
-            return
-
-        direction = direction / norm
-        self.last_shoot_dir = direction.copy()
-
-        self.bullets.append(Bullet(
-            self.player.position[0],
-            self.player.position[1],
-            direction[0],
-            direction[1]
-        ))
-
-        self.shoot_cooldown = 20
-
     def get_nearest_monster_distance(self):
         if len(self.monsters) == 0:
             return None
@@ -334,10 +278,9 @@ class Environment(gymnasium.Env):
         return min(
             np.linalg.norm(m.position - self.player.position)
             for m in self.monsters
-    )
+        )
 
     def step(self, action):
-
         self.current_step += 1
         reward = 0.0
 
@@ -367,9 +310,12 @@ class Environment(gymnasium.Env):
             reward += self.obstacle_collision_penalty
 
         # -------------------------
-        # Automatisches Schießen
+        # Movement-only Reward
         # -------------------------
-        self.auto_shoot_nearest_visible()
+        # Kein Auto-Aim, keine Bullets, keine Kills, keine Waves.
+        self.bullets = []
+        self.shoot_cooldown = 0
+        self.last_shoot_dir = np.array([0.0, 0.0], dtype=np.float32)
 
         visible_target = self.get_nearest_visible_monster()
 
@@ -388,48 +334,7 @@ class Environment(gymnasium.Env):
             elif nearest_dist > 4.5:
                 reward += self.too_far_penalty
 
-        if self.shoot_cooldown > 0:
-            self.shoot_cooldown -= 1
-
-        for b in self.bullets:
-            b.update()
-
-        self.bullets = [b for b in self.bullets
-                        if not b.out_of_bounds(self.width, self.height)
-                        and not any(o.contains_p(b.position[0], b.position[1])
-                        for o in self.obstacles)]
-
-        remaining_bullets = []
-
-        killed_monsters = []
-
-        for b in self.bullets:
-            bullet_hit = False
-
-            for m in self.monsters:
-                if m in killed_monsters:
-                    continue
-
-                if np.linalg.norm(b.position - m.position) < 0.35:
-                    reward += self.kill_reward
-
-                    killed_monsters.append(m)
-                    bullet_hit = True
-                    break
-
-            if not bullet_hit:
-                remaining_bullets.append(b)
-
-        self.bullets = remaining_bullets
-        self.monsters = [m for m in self.monsters if m not in killed_monsters]
-
-        if len(self.monsters) == 0:
-            self.wave += 1
-            monster_count = self.curriculum_level + (self.wave -1)
-            for _ in range(monster_count):
-              self.monsters.append(self.spawn_monster_on_edge())
-            reward += self.wave_clear_reward
-
+        # Gegner bewegen sich weiterhin. Genau dagegen soll Movement gelernt werden.
         for m in self.monsters:
             m.update(
                 player=self.player,
@@ -443,15 +348,14 @@ class Environment(gymnasium.Env):
             np.linalg.norm(m.position - self.player.position) < 0.27
             for m in self.monsters
         )
-       
+
         margin = min(
             self.player.position[0],
             self.width - self.player.position[0],
             self.player.position[1],
             self.height - self.player.position[1]
-            )
+        )
 
-        
         if margin < 0.5:
             reward += self.wall_near_penalty
 
@@ -463,8 +367,12 @@ class Environment(gymnasium.Env):
         if obstacle_margin < 0.3:
             reward += self.obstacle_near_penalty
 
-        distances = [self.player.position[0], self.width - self.player.position[0],
-                     self.player.position[1], self.height - self.player.position[1]]
+        distances = [
+            self.player.position[0],
+            self.width - self.player.position[0],
+            self.player.position[1],
+            self.height - self.player.position[1]
+        ]
 
         distances_sorted = sorted(distances)
         if distances_sorted[0] < 0.5 and distances_sorted[1] < 0.5:
@@ -480,6 +388,7 @@ class Environment(gymnasium.Env):
         truncated = self.current_step >= self.max_steps
 
         info = {
+            "curriculum_level": self.curriculum_level,
             "monster_states": [m.state.name for m in self.monsters],
             "monster_path_lengths": [len(m.path) for m in self.monsters],
             "monster_waypoint_indices": [m.current_waypoint_index for m in self.monsters],
@@ -492,7 +401,6 @@ class Environment(gymnasium.Env):
         done = terminated or truncated
 
         if done:
-            self.episode_waves.append(self.wave)
             self.episode_lengths.append(self.current_step)
 
         return self._get_obs(), reward, terminated, truncated, info
