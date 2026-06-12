@@ -19,4 +19,5 @@ model = stable_baselines3.SAC(
 )
 
 model.learn(total_timesteps=200000)
-model.save("movement_autoaim_SAC")
+model.save("movement_autoaim_SAC_200k")
+

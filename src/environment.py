@@ -35,7 +35,27 @@ class Environment(gymnasium.Env):
         self.curriculum_level = 1
         self.episode_lengths = []
         self.curriculum_threshold = 1500
-        self.max_steps = 3000
+        self.max_steps = 1500
+        self.alive_reward = 0.005
+
+        self.visible_target_reward = 0.02
+        self.no_visible_target_penalty = -0.005
+
+        self.too_close_penalty = -0.05
+        self.good_distance_reward = 0.01
+        self.too_far_penalty = -0.005
+
+        self.wall_near_penalty = -0.03
+        self.obstacle_near_penalty = -0.03
+        self.corner_penalty = -0.08
+        self.obstacle_collision_penalty = -0.10
+
+        self.hit_reward = 1.0
+        self.kill_reward = 3.0
+        self.wave_clear_reward = 5.0
+
+        self.death_penalty = -12.0
+
         self.action_space = spaces.Box(
             low=np.array([-1.0, -1.0], dtype=np.float32),
             high=np.array([1.0, 1.0], dtype=np.float32),
@@ -292,6 +312,15 @@ class Environment(gymnasium.Env):
 
         self.shoot_cooldown = 10
 
+    def get_nearest_monster_distance(self):
+        if len(self.monsters) == 0:
+            return None
+
+        return min(
+            np.linalg.norm(m.position - self.player.position)
+            for m in self.monsters
+    )
+
     def step(self, action):
 
         self.current_step += 1
@@ -311,15 +340,38 @@ class Environment(gymnasium.Env):
             move_dir = move_vec / move_norm
             self.player.move(move_dir[0], move_dir[1], self.width, self.height)
 
+        collided_with_obstacle = False
+
         for o in self.obstacles:
             if o.contains_p(self.player.position[0], self.player.position[1], radius=0.15):
                 self.player.position = prev_player_pos.copy()
+                collided_with_obstacle = True
                 break
+
+        if collided_with_obstacle:
+            reward += self.obstacle_collision_penalty
 
         # -------------------------
         # Automatisches Schießen
         # -------------------------
         self.auto_shoot_nearest_visible()
+
+        visible_target = self.get_nearest_visible_monster()
+
+        if visible_target is not None:
+            reward += self.visible_target_reward
+        else:
+            reward += self.no_visible_target_penalty
+
+        nearest_dist = self.get_nearest_monster_distance()
+
+        if nearest_dist is not None:
+            if nearest_dist < 0.7:
+                reward += self.too_close_penalty
+            elif 1.0 <= nearest_dist <= 2.5:
+                reward += self.good_distance_reward
+            elif nearest_dist > 4.5:
+                reward += self.too_far_penalty
 
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
@@ -340,7 +392,7 @@ class Environment(gymnasium.Env):
             for m in self.monsters:
                 if np.linalg.norm(b.position - m.position) < 0.35:
                     m.hp -= b.damage
-                    reward += 37.0  # direkter Treffer-Reward
+                    reward += self.kill_reward  # direkter Treffer-Reward
 
                     bullet_hit = True
                     break
@@ -357,7 +409,7 @@ class Environment(gymnasium.Env):
             monster_count = self.curriculum_level + (self.wave -1)
             for _ in range(monster_count):
               self.monsters.append(self.spawn_monster_on_edge())
-            reward += 8.0
+            reward += self.wave_clear_reward
 
         for m in self.monsters:
             m.update(
@@ -382,7 +434,7 @@ class Environment(gymnasium.Env):
 
         
         if margin < 0.5:
-            reward-= 0.2
+            reward += self.wall_near_penalty
 
         obstacle_margin = min(
             o.distance_obstacle_to_player(self.player.position[0], self.player.position[1])
@@ -390,20 +442,20 @@ class Environment(gymnasium.Env):
         )
 
         if obstacle_margin < 0.3:
-            reward -= 0.2
+            reward += self.obstacle_near_penalty
 
         distances = [self.player.position[0], self.width - self.player.position[0],
                      self.player.position[1], self.height - self.player.position[1]]
 
         distances_sorted = sorted(distances)
         if distances_sorted[0] < 0.5 and distances_sorted[1] < 0.5:
-            reward -= 0.5
+            reward += self.corner_penalty
 
         if hit:
-            reward -= 10
+            reward += self.death_penalty
             terminated = True
         else:
-            reward += 0.02
+            reward += self.alive_reward
             terminated = False
 
         truncated = self.current_step >= self.max_steps
