@@ -248,17 +248,6 @@ class Monster:
 
         self.position = self.position + self.speed * direction
 
-class Goblin(Monster):
-    # Schnelles, schwaches Monster (oneshot)
-    def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.0065, hp = 50)
-
-class Golem(Monster):
-    # Langsames, starkes Monster (3 Treffer nötig bei dmg = 50)
-    def __init__(self, x, y):
-        super().__init__(x, y, speed = 0.0035, hp = 150)
-
-
 # Obstacles einfügen
 class Obstacle():
     def __init__(self, x, y, width, height):

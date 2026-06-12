@@ -59,28 +59,32 @@ class Environment(gymnasium.Env):
         # Bleibt für ROS2/Visualisierung vorhanden, wird in Movement-only aber nicht benutzt.
         self.bullets = []
         self.last_shoot_dir = np.array([0.0, 0.0], dtype=np.float32)
-        self.shoot_cooldown = 0
         self.wave = 0
         self.last_position = None
         self.screen = None
         self._fig = None
         self._ax = None
 
-        # Observation Space bleibt erstmal kompatibel zur bisherigen Struktur.
-        monster_low = [-np.pi, 0.0] * 4
+        # Observation Space V2:
+        # 4 Monster     × (dx, dy, dist) = 12
+        # 4 Wände       × Abstand        = 4
+        # 4 Hindernisse × (dx, dy, dist) = 12
+        # ------------------------------------
+        # Gesamt                         = 28
+        #
+        # Alle Werte sind grob auf [-1, 1] bzw. [0, 1] normalisiert.
+        monster_low = [-1.0, -1.0, 0.0] * 4
         wall_low = [0.0] * 4
-        cooldown_low = [0.0]
-        obstacle_low = [-np.pi, 0.0] * 2
+        obstacle_low = [-1.0, -1.0, 0.0] * 4
 
-        monster_high = [np.pi, 15.0] * 4
-        wall_high = [6.0] * 4
-        cooldown_high = [10.0]
-        obstacle_high = [np.pi, 20.0] * 2
+        monster_high = [1.0, 1.0, 1.0] * 4
+        wall_high = [1.0] * 4
+        obstacle_high = [1.0, 1.0, 1.0] * 4
 
         self.observation_space = spaces.Box(
-            low=np.array(monster_low + wall_low + cooldown_low + obstacle_low),
-            high=np.array(monster_high + wall_high + cooldown_high + obstacle_high),
-            shape=(17,),
+            low=np.array(monster_low + wall_low + obstacle_low, dtype=np.float32),
+            high=np.array(monster_high + wall_high + obstacle_high, dtype=np.float32),
+            shape=(28,),
             dtype=np.float32
         )
 
@@ -89,11 +93,62 @@ class Environment(gymnasium.Env):
         self.current_step = 0
 
     def _get_obs(self):
+        diagonal = np.sqrt(self.width ** 2 + self.height ** 2)
+
+        # -------------------------
+        # Monster: nächste 4 Gegner
+        # -------------------------
+        sorted_monsters = sorted(
+            enumerate(self.monsters),
+            key=lambda im: (
+                np.linalg.norm(im[1].position - self.player.position),
+                im[0]
+            )
+        )
+        sorted_monsters = [m for _, m in sorted_monsters]
+
+        def monster_rel(i):
+            if i < len(sorted_monsters):
+                rel = sorted_monsters[i].position - self.player.position
+                dist = np.linalg.norm(rel)
+
+                return [
+                    rel[0] / self.width,
+                    rel[1] / self.height,
+                    dist / diagonal
+                ]
+
+            return [0.0, 0.0, 0.0]
+
+        # -------------------------
+        # Wände: normalisierte Abstände
+        # -------------------------
+        dist_left = float(self.player.position[0] / self.width)
+        dist_right = float((self.width - self.player.position[0]) / self.width)
+        dist_down = float(self.player.position[1] / self.height)
+        dist_up = float((self.height - self.player.position[1]) / self.height)
+
+        wall_obs = [
+            dist_left,
+            dist_right,
+            dist_down,
+            dist_up
+        ]
+
+        # -------------------------
+        # Hindernisse: alle 4, sortiert nach Nähe
+        # -------------------------
         sorted_obstacles = sorted(
             enumerate(self.obstacles),
             key=lambda io: (
                 np.linalg.norm(
-                    np.array([io[1].x + io[1].width / 2, io[1].y + io[1].height / 2])
+                    np.array(
+                        [
+                            io[1].x + io[1].width / 2,
+                            io[1].y + io[1].height / 2
+                        ],
+                        dtype=np.float32
+                    )
                     - self.player.position
                 ),
                 io[0]
@@ -103,45 +158,45 @@ class Environment(gymnasium.Env):
 
         def obstacle_rel(i):
             if i < len(sorted_obstacles):
-                cx = sorted_obstacles[i].x + sorted_obstacles[i].width / 2
-                cy = sorted_obstacles[i].y + sorted_obstacles[i].height / 2
-                dx = cx - self.player.position[0]
-                dy = cy - self.player.position[1]
-                dist = sorted_obstacles[i].distance_obstacle_to_player(
+                obstacle = sorted_obstacles[i]
+
+                cx = obstacle.x + obstacle.width / 2
+                cy = obstacle.y + obstacle.height / 2
+
+                rel = np.array(
+                    [
+                        cx - self.player.position[0],
+                        cy - self.player.position[1]
+                    ],
+                    dtype=np.float32
+                )
+
+                dist = obstacle.distance_obstacle_to_player(
                     self.player.position[0],
                     self.player.position[1]
                 )
-                theta = np.arctan2(dy, dx)
-                return [theta, dist]
-            return [0.0, 0.0]
 
-        sorted_monsters = sorted(
-            enumerate(self.monsters),
-            key=lambda im: (np.linalg.norm(im[1].position - self.player.position), im[0])
+                return [
+                    rel[0] / self.width,
+                    rel[1] / self.height,
+                    dist / diagonal
+                ]
+
+            return [0.0, 0.0, 0.0]
+
+        obs = (
+            monster_rel(0)
+            + monster_rel(1)
+            + monster_rel(2)
+            + monster_rel(3)
+            + wall_obs
+            + obstacle_rel(0)
+            + obstacle_rel(1)
+            + obstacle_rel(2)
+            + obstacle_rel(3)
         )
-        sorted_monsters = [m for _, m in sorted_monsters]
 
-        def monster_rel(i):
-            if i < len(sorted_monsters):
-                dx = sorted_monsters[i].position[0] - self.player.position[0]
-                dy = sorted_monsters[i].position[1] - self.player.position[1]
-                dist = np.linalg.norm([dx, dy])
-                theta = np.arctan2(dy, dx)
-                return [theta, dist]
-            return [0.0, 0.0]
-
-        dist_left = float(self.player.position[0])
-        dist_right = float(self.width - self.player.position[0])
-        dist_down = float(self.player.position[1])
-        dist_up = float(self.height - self.player.position[1])
-
-        return np.array(
-            monster_rel(0) + monster_rel(1) + monster_rel(2) + monster_rel(3)
-            + [dist_left, dist_right, dist_down, dist_up]
-            + [float(self.shoot_cooldown)]
-            + obstacle_rel(0) + obstacle_rel(1),
-            dtype=np.float32
-        )
+        return np.array(obs, dtype=np.float32)
 
     def get_frame(self):
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
