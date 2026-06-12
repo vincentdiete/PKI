@@ -17,6 +17,6 @@ model = stable_baselines3.SAC(
 
 model.learn(total_timesteps=200_000)
 
-model.save("models/shooting_SAC_200k")
+model.save("shooting_SAC_200k")
 
-print("Shooting-Modell gespeichert unter: models/shooting_SAC_200k.zip")
+print("Shooting-Modell gespeichert unter: shooting_SAC_200k.zip")
