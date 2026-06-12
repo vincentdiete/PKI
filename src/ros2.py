@@ -56,6 +56,13 @@ class TowerDefensePublisher:
         for attr in ['wave', 'curriculum_level', 'current_step', 'shoot_cooldown']:
             if hasattr(self.env, attr):
                 state[attr] = float(getattr(self.env, attr))
+
+        if hasattr(self.env, "last_shoot_dir"):
+            state["shoot_x"] = float(self.env.last_shoot_dir[0])
+            state["shoot_y"] = float(self.env.last_shoot_dir[1])
+        else:
+            state["shoot_x"] = 0.0
+            state["shoot_y"] = 0.0
         
 
         for i, b in enumerate(self.env.bullets[:4]):

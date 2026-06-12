@@ -62,6 +62,7 @@ class Environment(gymnasium.Env):
         )
 
         self.bullets = []
+        self.last_shoot_dir = np.array([0.0, 0.0], dtype=np.float32)
         self.shoot_cooldown = 0
         self.wave = 0
         self.last_position = None
@@ -313,6 +314,7 @@ class Environment(gymnasium.Env):
             return
 
         direction = direction / norm
+        self.last_shoot_dir = direction.copy()
 
         self.bullets.append(Bullet(
             self.player.position[0],
