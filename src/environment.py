@@ -30,22 +30,22 @@ class Environment(gymnasium.Env):
 
         # Movement-only Curriculum: Schwierigkeit steigt über mehr Gegner beim Reset.
         self.curriculum_level = 1
-        self.max_curriculum_level = 3
+        self.max_curriculum_level = 4
         self.episode_lengths = []
         self.max_steps = 3000
 
         # Movement-only Reward-Skala
-        self.alive_reward = 0.001
+        self.alive_reward = 0.005
         self.visible_target_reward = 0.02
         self.no_visible_target_penalty = -0.005
 
-        self.too_close_penalty = -0.05
-        self.good_distance_reward = 0.01
+        self.too_close_penalty = -0.08
+        self.good_distance_reward = 0.015
         self.too_far_penalty = -0.005
 
-        self.wall_near_penalty = -0.03
+        self.wall_near_penalty = -0.04
         self.obstacle_near_penalty = -0.03
-        self.corner_penalty = -0.08
+        self.corner_penalty = -0.12
         self.obstacle_collision_penalty = -0.10
         self.death_penalty = -12.0
 
