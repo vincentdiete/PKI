@@ -1,22 +1,70 @@
-import time
-import stable_baselines3
-from src.ros2 import TowerDefensePublisher
 import os
+import time
+import numpy as np
+from stable_baselines3 import SAC
 
-publisher = TowerDefensePublisher()
-obs, info = publisher.reset()
-model_path = os.path.join(os.path.dirname(__file__), "models", "best", "best_model.zip")
-
-model = stable_baselines3.SAC.load(model_path)
+from src.ros2 import TowerDefensePublisher
 
 
-for step in range(10000000):
-    action, _ = model.predict(obs, deterministic=True)
-    obs, reward, terminated, truncated, info = publisher.step(action)
-    print(f"Step {step} | Action: {action} | Reward: {reward:.2f}")
-    time.sleep(0.01)
-    if terminated or truncated:
-        print(f"RESET bei Step {step}!")
-        obs, info = publisher.reset()
+MOVEMENT_MODEL_PATH = os.path.join("models", "movement_autoaim_SAC_500k.zip")
+SHOOTING_MODEL_PATH = os.path.join("models", "shooting_SAC_200k.zip")
+SLEEP_SECONDS = 0.01
+DETERMINISTIC = True
 
-publisher.close()
+
+def main():
+    publisher = TowerDefensePublisher()
+    obs, info = publisher.reset()
+
+    movement_model = SAC.load(MOVEMENT_MODEL_PATH)
+    shooting_model = SAC.load(SHOOTING_MODEL_PATH)
+
+    try:
+        for step in range(10_000_000):
+            move_action, _ = movement_model.predict(
+                obs,
+                deterministic=DETERMINISTIC,
+            )
+
+            shooting_obs, has_target = publisher.env.get_shooting_obs(only_visible=True)
+            if has_target:
+                shoot_action, _ = shooting_model.predict(
+                    shooting_obs,
+                    deterministic=DETERMINISTIC,
+                )
+            else:
+                shoot_action = np.array([0.0, 0.0], dtype=np.float32)
+
+            combined_action = np.array(
+                [
+                    move_action[0],
+                    move_action[1],
+                    shoot_action[0],
+                    shoot_action[1],
+                ],
+                dtype=np.float32,
+            )
+
+            obs, reward, terminated, truncated, info = publisher.step(combined_action)
+
+            print(
+                f"Step {step} | "
+                f"move={move_action} | "
+                f"shoot={shoot_action} | "
+                f"reward={reward:.2f} | "
+                f"wave={info.get('wave', 0)} | "
+                f"monsters={info.get('monster_count', 0)}"
+            )
+
+            time.sleep(SLEEP_SECONDS)
+
+            if terminated or truncated:
+                print(f"RESET bei Step {step}! terminated={terminated}, truncated={truncated}")
+                obs, info = publisher.reset()
+
+    finally:
+        publisher.close()
+
+
+if __name__ == "__main__":
+    main()
