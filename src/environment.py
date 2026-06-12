@@ -67,6 +67,8 @@ class Environment(gymnasium.Env):
         self.wave = 0
         self.last_position = None
         self.screen = None
+        self._fig = None
+        self._ax = None
 
         # Observation Space aufbauen
         monster_low = [-np.pi, 0.0] * 4
@@ -173,10 +175,10 @@ class Environment(gymnasium.Env):
             self._fig = None
             self._ax = None
 
-    def reset(self, seed=None, options=None):
 
+    def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-       
+
         if len(self.episode_waves) >= 20:
             recent_waves = self.episode_waves[-20:]
             recent_lengths = self.episode_lengths[-20:]
@@ -186,13 +188,10 @@ class Environment(gymnasium.Env):
 
             if (
                 avg_waves >= self.curriculum_threshold_waves
-                and avg_length > 300
-                and self.curriculum_level < 4
+                and avg_length >= 0.6 * self.max_steps
+                and self.curriculum_level < 3
             ):
                 self.curriculum_level += 1
-
-                # Wichtig: Statistik zurücksetzen,
-                # damit nicht sofort wieder hochgestuft wird.
                 self.episode_waves = []
                 self.episode_lengths = []
             else:
@@ -204,19 +203,22 @@ class Environment(gymnasium.Env):
         self.shoot_cooldown = 0
         self.bullets = []
         self.last_position = None
-       
+        self.last_shoot_dir = np.array([0.0, 0.0], dtype=np.float32)
+
         margin = 1.5
         while True:
             px = np.random.uniform(margin, self.width - margin)
             py = np.random.uniform(margin, self.height - margin)
-            if not any(o.contains_p(px, py, radius = 0.2) for o in self.obstacles):
+            if not any(o.contains_p(px, py, radius=0.2) for o in self.obstacles):
                 break
+
         self.player = Player(px, py)
 
         self.monsters = [
             self.spawn_monster_on_edge()
             for _ in range(self.curriculum_level)
         ]
+
         return self._get_obs(), {}
 
     def spawn_monster_on_edge(self):
