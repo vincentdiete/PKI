@@ -35,7 +35,7 @@ class Environment(gymnasium.Env):
         self.curriculum_level = 1
         self.episode_lengths = []
         self.curriculum_threshold = 1500
-        self.max_steps = 1500
+        self.max_steps = 3000
         self.alive_reward = 0.005
 
         self.visible_target_reward = 0.02
