@@ -323,7 +323,7 @@ class Environment(gymnasium.Env):
             direction[1]
         ))
 
-        self.shoot_cooldown = 10
+        self.shoot_cooldown = 20
 
     def get_nearest_monster_distance(self):
         if len(self.monsters) == 0:
@@ -409,7 +409,6 @@ class Environment(gymnasium.Env):
                     continue
 
                 if np.linalg.norm(b.position - m.position) < 0.35:
-                    reward += self.hit_reward
                     reward += self.kill_reward
 
                     killed_monsters.append(m)
