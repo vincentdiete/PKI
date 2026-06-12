@@ -37,10 +37,10 @@ class Environment(gymnasium.Env):
         self.curriculum_threshold = 1500
         self.max_steps = 3000
         self.action_space = spaces.Box(
-            low=np.array([-1.0, -1.0, -1.0, -1.0], dtype=np.float32),
-            high=np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+            low=np.array([-1.0, -1.0], dtype=np.float32),
+            high=np.array([1.0, 1.0], dtype=np.float32),
             dtype=np.float32
-            )
+        )
 
         self.bullets = []
         self.shoot_cooldown = 0
@@ -210,13 +210,94 @@ class Environment(gymnasium.Env):
         else:
             return Golem(x, y)
         '''
+    def has_clear_shot(self, target_position, step_size=0.05, radius=0.03):
+        """
+        Prüft, ob zwischen Player und Ziel ein Hindernis liegt.
+        Gibt True zurück, wenn der Schussweg frei ist.
+        """
+
+        start = self.player.position
+        end = target_position
+
+        direction = end - start
+        distance = np.linalg.norm(direction)
+
+        if distance < 1e-8:
+            return True
+
+        direction = direction / distance
+        steps = max(1, int(distance / step_size))
+
+        for i in range(1, steps + 1):
+            point = start + direction * step_size * i
+
+            for obstacle in self.obstacles:
+                if obstacle.contains_p(point[0], point[1], radius=radius):
+                    return False
+
+        return True
+
+
+    def get_nearest_visible_monster(self):
+        """
+        Sucht den nächsten Gegner, der vom Player aus direkt beschießbar ist.
+        Gegner hinter Hindernissen werden ignoriert.
+        """
+
+        if len(self.monsters) == 0:
+            return None
+
+        visible_monsters = [
+            m for m in self.monsters
+            if self.has_clear_shot(m.position)
+        ]
+
+        if len(visible_monsters) == 0:
+            return None
+
+        return min(
+            visible_monsters,
+            key=lambda m: np.linalg.norm(m.position - self.player.position)
+        )
+
+
+    def auto_shoot_nearest_visible(self):
+        """
+        Schießt automatisch auf den nächsten sichtbaren Gegner.
+        Der Agent entscheidet nicht über die Schussrichtung.
+        """
+
+        if self.shoot_cooldown > 0:
+            return
+
+        target = self.get_nearest_visible_monster()
+
+        if target is None:
+            return
+
+        direction = target.position - self.player.position
+        norm = np.linalg.norm(direction)
+
+        if norm < 1e-8:
+            return
+
+        direction = direction / norm
+
+        self.bullets.append(Bullet(
+            self.player.position[0],
+            self.player.position[1],
+            direction[0],
+            direction[1]
+        ))
+
+        self.shoot_cooldown = 10
 
     def step(self, action):
 
         self.current_step += 1
         reward = 0.0
 
-        move_x, move_y, shoot_x, shoot_y = action
+        move_x, move_y = action
 
         # -------------------------
         # Player-Bewegung
@@ -226,36 +307,19 @@ class Environment(gymnasium.Env):
 
         prev_player_pos = self.player.position.copy()
 
-        # Nur bewegen, wenn der Bewegungsvektor deutlich genug ist.
-        # Dadurch kann der Agent auch stehen bleiben.
         if move_norm > 0.1:
             move_dir = move_vec / move_norm
             self.player.move(move_dir[0], move_dir[1], self.width, self.height)
 
-        # Kollision mit Hindernissen: Bewegung rückgängig machen
         for o in self.obstacles:
             if o.contains_p(self.player.position[0], self.player.position[1], radius=0.15):
                 self.player.position = prev_player_pos.copy()
                 break
 
         # -------------------------
-        # Schießen
+        # Automatisches Schießen
         # -------------------------
-        shoot_vec = np.array([shoot_x, shoot_y], dtype=np.float32)
-        shoot_norm = np.linalg.norm(shoot_vec)
-
-        # Nur schießen, wenn Cooldown frei ist und der Schussvektor groß genug ist.
-        if self.shoot_cooldown == 0 and shoot_norm > 0.1:
-            shoot_dir = shoot_vec / shoot_norm
-
-            self.bullets.append(Bullet(
-                self.player.position[0],
-                self.player.position[1],
-                shoot_dir[0],
-                shoot_dir[1]
-            ))
-
-            self.shoot_cooldown = 10
+        self.auto_shoot_nearest_visible()
 
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
@@ -276,10 +340,7 @@ class Environment(gymnasium.Env):
             for m in self.monsters:
                 if np.linalg.norm(b.position - m.position) < 0.35:
                     m.hp -= b.damage
-                    reward += 1.0  # direkter Treffer-Reward
-
-                    if m.hp <= 0:
-                        reward += 4.0  # direkter Kill-Reward
+                    reward += 37.0  # direkter Treffer-Reward
 
                     bullet_hit = True
                     break
