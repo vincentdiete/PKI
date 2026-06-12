@@ -18,6 +18,6 @@ model = stable_baselines3.SAC(
     tensorboard_log="./logs"
 )
 
-model.learn(total_timesteps=200000)
-model.save("movement_autoaim_SAC_200k")
+model.learn(total_timesteps=500000)
+model.save("movement_autoaim_SAC_500k")
 
