@@ -50,8 +50,7 @@ class Environment(gymnasium.Env):
         self.corner_penalty = -0.08
         self.obstacle_collision_penalty = -0.10
 
-        self.hit_reward = 1.0
-        self.kill_reward = 3.0
+        self.kill_reward = 4.0
         self.wave_clear_reward = 5.0
 
         self.death_penalty = -12.0
@@ -179,13 +178,25 @@ class Environment(gymnasium.Env):
        
         if len(self.episode_waves) >= 20:
             recent_waves = self.episode_waves[-20:]
-            avg_waves = np.mean(recent_waves)
+            recent_lengths = self.episode_lengths[-20:]
 
-            if avg_waves >= self.curriculum_threshold_waves and self.curriculum_level < 4:
+            avg_waves = np.mean(recent_waves)
+            avg_length = np.mean(recent_lengths)
+
+            if (
+                avg_waves >= self.curriculum_threshold_waves
+                and avg_length > 300
+                and self.curriculum_level < 4
+            ):
                 self.curriculum_level += 1
 
-            self.episode_waves = self.episode_waves[-20:]
-            self.episode_lengths = self.episode_lengths[-20:]
+                # Wichtig: Statistik zurücksetzen,
+                # damit nicht sofort wieder hochgestuft wird.
+                self.episode_waves = []
+                self.episode_lengths = []
+            else:
+                self.episode_waves = self.episode_waves[-20:]
+                self.episode_lengths = self.episode_lengths[-20:]
 
         self.current_step = 0
         self.wave = 0
@@ -386,14 +397,20 @@ class Environment(gymnasium.Env):
 
         remaining_bullets = []
 
+        killed_monsters = []
+
         for b in self.bullets:
             bullet_hit = False
 
             for m in self.monsters:
-                if np.linalg.norm(b.position - m.position) < 0.35:
-                    m.hp -= b.damage
-                    reward += self.kill_reward  # direkter Treffer-Reward
+                if m in killed_monsters:
+                    continue
 
+                if np.linalg.norm(b.position - m.position) < 0.35:
+                    reward += self.hit_reward
+                    reward += self.kill_reward
+
+                    killed_monsters.append(m)
                     bullet_hit = True
                     break
 
@@ -401,8 +418,7 @@ class Environment(gymnasium.Env):
                 remaining_bullets.append(b)
 
         self.bullets = remaining_bullets
-
-        self.monsters = [m for m in self.monsters if m.hp > 0]
+        self.monsters = [m for m in self.monsters if m not in killed_monsters]
 
         if len(self.monsters) == 0:
             self.wave += 1
@@ -469,5 +485,11 @@ class Environment(gymnasium.Env):
                 for m in self.monsters
             ],
         }
+
+        done = terminated or truncated
+
+        if done:
+            self.episode_waves.append(self.wave)
+            self.episode_lengths.append(self.current_step)
 
         return self._get_obs(), reward, terminated, truncated, info
